@@ -1,0 +1,132 @@
+# 模型代理配置文件
+
+# 应用隔离配置
+app:
+  home: ""
+  data_dir: "data"
+  log_dir: "logs"
+  model_cache_file: "data/models_cache.json"
+  failure_log_file: "logs/failures.jsonl"
+  proxy_log_file: "logs/proxy.log"
+
+# 模型优先级列表（按顺序优先使用）
+# 支持的模型标识符将按此顺序尝试
+model_priority:
+  - deepseek-ai/DeepSeek-R1-0528
+  - Qwen/Qwen3-235B-A22B-Instruct-2507
+  - Qwen/Qwen3-Coder-480B-A35B-Instruct
+  - deepseek-ai/DeepSeek-V4-Pro
+  - deepseek-ai/DeepSeek-V4-Flash
+  - ZhipuAI/GLM-5
+  - ZhipuAI/GLM-5.1
+  - Qwen/Qwen3-Next-80B-A3B-Instruct
+  - Qwen/Qwen3-32B
+  - deepseek-ai/DeepSeek-R1-Distill-Qwen-32B
+  - Qwen/Qwen3-30B-A3B-Instruct-2507
+  - deepseek-ai/DeepSeek-V3.2
+  - inclusionAI/Ling-2.6-1T
+  - inclusionAI/Ring-2.6-1T
+  - MiniMax/MiniMax-M2.7
+  - MiniMax/MiniMax-M2.5
+  - MiniMax/MiniMax-M1-80k
+  - inclusionAI/Ling-2.6-flash
+  - ZhipuAI/GLM-4.7
+  - ZhipuAI/GLM-4.7-Flash
+  - Qwen/Qwen3-Coder-30B-A3B-Instruct
+  - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
+  - Qwen/Qwen3-14B
+  - deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
+  - Qwen/Qwen3-8B
+  - Qwen/QwQ-32B
+  - Qwen/QwQ-32B-Preview
+  - XiaomiMiMo/MiMo-V2-Flash
+  - Qwen/Qwen3-4B
+  - deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
+  - deepseek-ai/DeepSeek-R1-Distill-Llama-8B
+  - deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
+  - Qwen/Qwen3-1.7B
+  - Qwen/Qwen3-0.6B
+  - ZhipuAI/GLM-4.6
+  - ZhipuAI/GLM-4.5
+  - MedAIBase/AntAngelMed
+  - LLM-Research/Llama-4-Maverick-17B-128E-Instruct
+  - mistralai/Mistral-Large-Instruct-2407
+  - mistralai/Ministral-8B-Instruct-2410
+  - meituan-longcat/LongCat-Flash-Lite
+  - XGenerationLab/XiYanSQL-QwenCoder-32B-2504
+  - XGenerationLab/XiYanSQL-QwenCoder-32B-2412
+  - PaddlePaddle/ERNIE-4.5-21B-A3B-PT
+  - PaddlePaddle/ERNIE-4.5-300B-A47B-PT
+  - PaddlePaddle/ERNIE-4.5-0.3B-PT
+  - Qwen/Qwen3-30B-A3B-Thinking-2507
+  - Qwen/Qwen3-235B-A22B-Thinking-2507
+  - Qwen/Qwen3-Next-80B-A3B-Thinking
+  - LLM-Research/c4ai-command-r-plus-08-2024
+  - Qwen/Qwen3-235B-A22B
+  - Qwen/Qwen3-30B-A3B
+
+# ModelScope API 配置
+modelscope:
+  api_base: "https://modelscope.cn/api/v1"
+  fetch_script_path: ""
+  # 更新频率（cron表达式）
+  # 默认：每天首次启动时更新（这里配置为每天凌晨2点）
+  update_schedule: "0 2 * * *"
+  # 模型列表缓存时间（秒）
+  cache_ttl: 86400  # 24小时
+
+# 额度感知配置
+quota:
+  # 检查额度失败的阈值
+  # 当返回特定错误码时触发切换
+  error_codes:
+    - "quota_exceeded"
+    - "rate_limit_exceeded"
+    - "insufficient_quota"
+  # 请求失败重试次数（每个模型）
+  max_retries: 3
+  # 重试间隔（秒）
+  retry_delay: 1
+
+# 失败记录配置
+failure_tracking:
+  # 启用失败记录
+  enabled: true
+  # 记录文件路径
+  log_file: "logs/failures.jsonl"
+  # 失败阈值（达到后自动降低优先级）
+  failure_threshold: 5
+  # 时间窗口（秒）
+  time_window: 3600  # 1小时
+
+# 流式响应配置
+streaming:
+  # 是否启用流式支持
+  enabled: true
+  # 流式超时（秒）
+  timeout: 300
+  # 缓冲区大小
+  buffer_size: 1024
+
+# 日志配置
+logging:
+  level: "INFO"
+  log_file: "logs/proxy.log"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# 代理配置
+proxy:
+  # 超时时间（秒）
+  timeout: 60
+  # 连接超时
+  connect_timeout: 10
+  # 是否自动重试下一个模型
+  auto_retry: true
+  # 本地代理监听地址
+  host: "127.0.0.1"
+  port: 8080
+  # 上游模型服务（OpenAI 或 Anthropic 兼容）
+  upstream_base_url: "https://api-inference.modelscope.cn"
+  upstream_api_key_env: "MS_CLAUDE_UPSTREAM_API_KEY"
+  upstream_api_key: ""
+  upstream_type: "openai"
