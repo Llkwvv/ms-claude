@@ -9,7 +9,7 @@ MS_CLAUDE_HOME="${MS_CLAUDE_HOME:-$HOME/.config/ms-claude}"
 MS_CLAUDE_PORT="${MS_CLAUDE_PORT:-8081}"
 CLIENT_CMD="${CLIENT_CMD:-claude}"
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 echo "=========================================="
 echo "启动 ms-claude 独立实例"

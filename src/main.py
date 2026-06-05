@@ -16,15 +16,20 @@ import subprocess
 import socket
 import shutil
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
+
+_INTERACTIVE_HELP = """\nCommands:
+  status  - Show proxy status
+  test    - Test proxy with sample request
+  update  - Update model list from ModelScope
+  help    - Show this help message
+  quit    - Exit
+"""
 
 # 确保可以导入src模块
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.core.proxy import ModelProxy
-from src.models.manager import ModelManager
-from src.services.failure import FailureTracker
-from src.services.modelscope import ModelScopeService
 from src.server.proxy_server import run_proxy_server
 from src.utils.config import Config
 from src.utils.logger import setup_logger
@@ -305,13 +310,7 @@ def main():
         print("\n" + "=" * 60)
         print("Model Proxy - Interactive Mode")
         print("=" * 60)
-        print("\nCommands:")
-        print("  status  - Show proxy status")
-        print("  test    - Test proxy with sample request")
-        print("  update  - Update model list from ModelScope")
-        print("  help    - Show this help message")
-        print("  quit    - Exit")
-        print()
+        print(_INTERACTIVE_HELP)
 
         while True:
             try:
@@ -336,12 +335,7 @@ def main():
                     proxy.model_manager.update_from_modelscope()
                     print("Done")
                 elif command == "help":
-                    print("\nCommands:")
-                    print("  status  - Show proxy status")
-                    print("  test    - Test proxy with sample request")
-                    print("  update  - Update model list from ModelScope")
-                    print("  help    - Show this help message")
-                    print("  quit    - Exit")
+                    print(_INTERACTIVE_HELP)
                 else:
                     print(f"Unknown command: {command}")
 
@@ -489,22 +483,6 @@ def _prepare_claude_settings(
     if backup_path:
         print(f"Backup created: {backup_path}")
     print(f"Claude base URL -> http://{host}:{port}")
-
-
-def _strip_proxy_env_inplace(env: Dict[str, str]) -> None:
-    """按需移除常见代理变量。默认保留代理环境。"""
-    if os.environ.get("MS_CLAUDE_DISABLE_PROXY") != "1":
-        return
-
-    for key in [
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
-        "ALL_PROXY",
-        "http_proxy",
-        "https_proxy",
-        "all_proxy",
-    ]:
-        env.pop(key, None)
 
 
 if __name__ == "__main__":

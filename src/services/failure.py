@@ -7,7 +7,7 @@ import logging
 import os
 import time
 from collections import defaultdict, deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, List, Optional
@@ -140,12 +140,17 @@ class FailureTracker:
         self._recent_failures: deque = deque(maxlen=1000)
 
         # 配置文件
-        failure_config = config.get("failure_tracking", {})
+        self.reload_config()
+
+    def reload_config(self) -> None:
+        """重新加载失败追踪配置（支持热重载）。"""
+        failure_config = self.config.get("failure_tracking", {})
         self._enabled = failure_config.get("enabled", True)
-        self._log_file = config.resolve_path(
+        self._log_file = self.config.resolve_path(
             failure_config.get("log_file", "logs/failures.jsonl"),
             "logs/failures.jsonl"
         )
+        self._base_log_file = self._log_file
         self._failure_threshold = failure_config.get(
             "failure_threshold", 5
         )
@@ -427,15 +432,37 @@ class FailureTracker:
                     f"Cleared failures for model {model_name}"
                 )
 
+    def _get_current_log_file(self) -> Path:
+        """获取当前日期的日志文件路径（按日期切割）。"""
+        date_str = datetime.now().strftime("%Y%m%d")
+        base = self._base_log_file
+        if base.suffix == ".jsonl":
+            return base.with_suffix(f".{date_str}.jsonl")
+        return base.parent / f"{base.stem}-{date_str}{base.suffix}"
+
+    def _get_recent_log_files(self, days: int = 7) -> List[Path]:
+        """获取最近 N 天的日志文件路径列表。"""
+        files = []
+        for i in range(days):
+            date_str = (datetime.now() - timedelta(days=i)).strftime("%Y%m%d")
+            base = self._base_log_file
+            if base.suffix == ".jsonl":
+                files.append(base.with_suffix(f".{date_str}.jsonl"))
+            else:
+                files.append(base.parent / f"{base.stem}-{date_str}{base.suffix}")
+        return files
+
     def _write_to_log(self, record: FailureRecord):
         """
-        写入日志文件
+        写入日志文件（按日期自动切割）。
 
         Args:
             record: 失败记录
         """
         try:
-            with open(self._log_file, 'a', encoding='utf-8') as f:
+            log_file = self._get_current_log_file()
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_file, 'a', encoding='utf-8') as f:
                 f.write(json.dumps(record.to_dict(), ensure_ascii=False))
                 f.write('\n')
         except Exception as e:
@@ -443,41 +470,41 @@ class FailureTracker:
 
     def load_from_log(self) -> int:
         """
-        从日志文件加载失败记录
+        从日志文件加载失败记录（加载最近7天的日志）。
 
         Returns:
             加载的记录数
         """
-        if not self._log_file.exists():
-            return 0
-
         count = 0
-        try:
-            with open(self._log_file, 'r', encoding='utf-8') as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
+        for log_file in self._get_recent_log_files(days=7):
+            if not log_file.exists():
+                continue
+            try:
+                with open(log_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
 
-                    try:
-                        data = json.loads(line)
-                        record = FailureRecord.from_dict(data)
+                        try:
+                            data = json.loads(line)
+                            record = FailureRecord.from_dict(data)
 
-                        with self._lock:
-                            self._failures[record.model_name].append(record)
-                            self._stats[record.model_name][
-                                record.error_type
-                            ] += 1
-                            self._stats[record.model_name]["total"] += 1
+                            with self._lock:
+                                self._failures[record.model_name].append(record)
+                                self._stats[record.model_name][
+                                    record.error_type
+                                ] += 1
+                                self._stats[record.model_name]["total"] += 1
 
-                        count += 1
-                    except Exception as e:
-                        self.logger.error(
-                            f"Error parsing log line: {e}"
-                        )
+                            count += 1
+                        except Exception as e:
+                            self.logger.error(
+                                f"Error parsing log line: {e}"
+                            )
 
-        except Exception as e:
-            self.logger.error(f"Error loading failure log: {e}")
+            except Exception as e:
+                self.logger.error(f"Error loading failure log {log_file}: {e}")
 
         self.logger.info(f"Loaded {count} failure records from log")
         return count

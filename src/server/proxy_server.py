@@ -37,6 +37,13 @@ class ProxyService:
         self.logger = logging.getLogger(__name__)
         self.session = requests.Session()
         self._last_successful_model: Optional[str] = None
+        self._last_success_model_file = config.resolve_path(
+            config.get("app.last_success_model_file", "data/last_success_model.json"),
+            "data/last_success_model.json"
+        )
+        self._load_last_successful_model()
+        # 注册配置变更回调
+        self.config.register_change_callback(self._on_config_changed)
 
         # 加载模型分组配置
         self._model_groups: Dict[str, set[str]] = {}
@@ -88,6 +95,46 @@ class ProxyService:
             self.logger.info(
                 "Loaded %d model group aliases", len(aliases)
             )
+
+    def _load_last_successful_model(self) -> None:
+        """从持久化文件加载上次成功使用的模型。"""
+        try:
+            if self._last_success_model_file.exists():
+                with open(self._last_success_model_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self._last_successful_model = data.get("last_successful_model")
+                if self._last_successful_model:
+                    self.logger.info(
+                        "Loaded last successful model: %s", self._last_successful_model
+                    )
+        except Exception as e:
+            self.logger.warning("Failed to load last successful model: %s", e)
+
+    def _save_last_successful_model(self) -> None:
+        """持久化上次成功使用的模型。"""
+        if not self._last_successful_model:
+            return
+        try:
+            self._last_success_model_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._last_success_model_file, 'w', encoding='utf-8') as f:
+                json.dump({"last_successful_model": self._last_successful_model}, f)
+        except Exception as e:
+            self.logger.warning("Failed to save last successful model: %s", e)
+
+    def _on_config_changed(self, old_config: Dict[str, Any], new_config: Dict[str, Any]) -> None:
+        """配置热重载回调：更新 ProxyService 运行时配置。"""
+        self.logger.info("Config hot-reload: updating ProxyService settings")
+        self.upstream_base_url = (
+            self.config.get("proxy.upstream_base_url", "") or ""
+        ).rstrip("/")
+        self.upstream_type = (
+            self.config.get("proxy.upstream_type", "openai") or "openai"
+        ).lower()
+        self.timeout = self.config.get("proxy.timeout", 60)
+        self.api_key = self._resolve_api_key()
+        self._load_model_groups()
+        self.model_proxy.config = self.config
+        self.model_proxy._on_config_changed(old_config, new_config)
 
     def _resolve_model_group(self, model_name: str) -> Optional[str]:
         """解析模型名对应的分组。"""
@@ -166,6 +213,18 @@ class ProxyService:
         return HTTPStatus.NOT_FOUND, {"Content-Type": "application/json"}, {
             "error": {"message": f"Unsupported path: {path}", "type": "invalid_request_error"}
         }, False
+
+    def _clamp_max_tokens(self, payload: Dict[str, Any]) -> None:
+        """限制 max_tokens 在 ModelScope API 允许范围内（原地修改）。"""
+        max_tokens = payload.get("max_tokens")
+        if isinstance(max_tokens, int):
+            if max_tokens > 16384:
+                payload["max_tokens"] = 16384
+                self.logger.debug("Capped max_tokens from %d to 16384", max_tokens)
+            elif max_tokens < 1:
+                payload["max_tokens"] = 1
+        elif max_tokens is not None:
+            payload["max_tokens"] = 8192
 
     def _select_model(self, payload: Dict[str, Any]) -> Model:
         model_name = payload.get("model")
@@ -301,17 +360,7 @@ class ProxyService:
             excluded.add(model.name)
             upstream_payload = dict(payload)
             upstream_payload["model"] = model.name
-
-            # 限制 max_tokens 在 ModelScope API 允许范围内
-            max_tokens = upstream_payload.get("max_tokens")
-            if isinstance(max_tokens, int):
-                if max_tokens > 16384:
-                    upstream_payload["max_tokens"] = 16384
-                    self.logger.debug("Capped max_tokens from %d to 16384", max_tokens)
-                elif max_tokens < 1:
-                    upstream_payload["max_tokens"] = 1
-            elif max_tokens is not None:
-                upstream_payload["max_tokens"] = 8192
+            self._clamp_max_tokens(upstream_payload)
 
             url = urljoin(self.upstream_base_url + "/", "v1/chat/completions")
             stream = bool(upstream_payload.get("stream"))
@@ -338,6 +387,7 @@ class ProxyService:
                     "Attempt %d: %s succeeded", attempt + 1, model.name
                 )
                 self._last_successful_model = model.name
+                self._save_last_successful_model()
                 return self._forward_openai_response(response, stream=stream)
 
             error_msg = self._extract_error_message(response)
@@ -373,18 +423,7 @@ class ProxyService:
                 break
 
             excluded.add(model.name)
-
-            # 限制 max_tokens 在 ModelScope API 允许范围内
-            max_tokens = payload.get("max_tokens")
-            if isinstance(max_tokens, int):
-                if max_tokens > 16384:
-                    payload["max_tokens"] = 16384
-                    self.logger.debug("Capped max_tokens from %d to 16384", max_tokens)
-                elif max_tokens < 1:
-                    payload["max_tokens"] = 1
-            elif max_tokens is not None:
-                payload["max_tokens"] = 8192
-
+            self._clamp_max_tokens(payload)
             stream = bool(payload.get("stream"))
 
             try:
@@ -404,6 +443,7 @@ class ProxyService:
                             "Attempt %d: %s succeeded", attempt + 1, model.name
                         )
                         self._last_successful_model = model.name
+                        self._save_last_successful_model()
                         if stream:
                             return self._forward_raw_stream(response)
                         return self._forward_json(response, anthropic=True)
@@ -423,6 +463,7 @@ class ProxyService:
                             "Attempt %d: %s succeeded", attempt + 1, model.name
                         )
                         self._last_successful_model = model.name
+                        self._save_last_successful_model()
                         if stream:
                             return self._transform_openai_stream_to_anthropic(response)
                         return self._transform_openai_to_anthropic(response)
@@ -769,11 +810,15 @@ def run_proxy_server(config: Config, host: Optional[str] = None, port: Optional[
         for h in root_logger.handlers
     )
     if not has_file_handler:
-        file_handler = logging.FileHandler(str(log_file), encoding='utf-8')
+        import logging.handlers
+        file_handler = logging.handlers.TimedRotatingFileHandler(
+            str(log_file), when='midnight', interval=1, backupCount=7, encoding='utf-8'
+        )
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(formatter)
         root_logger.addHandler(file_handler)
 
+    config.start_hot_reload()
     service = ProxyService(config)
     server_host = host or config.get("proxy.host", "127.0.0.1")
     server_port = int(port or config.get("proxy.port", 8080))

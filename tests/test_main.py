@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from src.main import _prepare_claude_settings, _strip_proxy_env_inplace
+from src.main import _prepare_claude_settings
 
 
 def test_prepare_claude_settings_creates_isolated_settings(tmp_path):
@@ -39,20 +39,3 @@ def test_prepare_claude_settings_backs_up_existing_file(tmp_path):
     data = json.loads(settings_path.read_text(encoding="utf-8"))
     assert data["env"]["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8081"
     assert data["env"]["ANTHROPIC_AUTH_TOKEN"] == "keep-me"
-
-
-def test_strip_proxy_env_inplace():
-    env = {
-        "HTTP_PROXY": "http://127.0.0.1:7897",
-        "HTTPS_PROXY": "http://127.0.0.1:7897",
-        "ALL_PROXY": "http://127.0.0.1:7897",
-        "http_proxy": "http://127.0.0.1:7897",
-        "keep": "value",
-    }
-
-    # 默认不剥离代理环境
-    _strip_proxy_env_inplace(env)
-
-    assert env["keep"] == "value"
-    assert env["HTTP_PROXY"] == "http://127.0.0.1:7897"
-    assert env["HTTPS_PROXY"] == "http://127.0.0.1:7897"

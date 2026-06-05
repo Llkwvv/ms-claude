@@ -3,6 +3,7 @@
 """
 
 import logging
+import logging.handlers
 import sys
 from pathlib import Path
 from typing import Optional
@@ -46,10 +47,12 @@ def setup_logger(
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    # 添加文件处理器
+    # 添加文件处理器（按天轮转，保留7天）
     if log_file:
         Path(log_file).parent.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler = logging.handlers.TimedRotatingFileHandler(
+            log_file, when='midnight', interval=1, backupCount=7, encoding='utf-8'
+        )
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 

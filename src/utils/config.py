@@ -5,8 +5,10 @@
 import json
 import logging
 import os
+import threading
+import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import yaml
 
@@ -51,6 +53,12 @@ class Config:
         self._load_config()
         self._load_env()
         self._apply_defaults()
+
+        # 热重载状态
+        self._callbacks: List[Callable] = []
+        self._last_mtime: float = 0
+        self._reload_thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
 
     def _load_config(self):
         """加载YAML配置文件"""
@@ -267,6 +275,67 @@ class Config:
                     d[k] = v
 
         deep_update(self._config, updates)
+
+    def start_hot_reload(self, interval: float = 2.0) -> None:
+        """启动配置热重载后台线程。"""
+        if self._reload_thread and self._reload_thread.is_alive():
+            self.logger.warning("Hot reload already running")
+            return
+        self._stop_event.clear()
+        self._last_mtime = self._get_mtime()
+        self._reload_thread = threading.Thread(
+            target=self._reload_loop,
+            args=(interval,),
+            daemon=True,
+            name="config-hot-reload",
+        )
+        self._reload_thread.start()
+        self.logger.info(
+            "Config hot-reload started (interval=%.1fs) for %s", interval, self.config_path
+        )
+
+    def stop_hot_reload(self) -> None:
+        """停止配置热重载后台线程。"""
+        self._stop_event.set()
+        if self._reload_thread:
+            self._reload_thread.join(timeout=5)
+            self._reload_thread = None
+
+    def _get_mtime(self) -> float:
+        try:
+            return self.config_path.stat().st_mtime
+        except Exception:
+            return 0.0
+
+    def _reload_loop(self, interval: float) -> None:
+        while not self._stop_event.is_set():
+            time.sleep(interval)
+            if self._stop_event.is_set():
+                break
+            current_mtime = self._get_mtime()
+            if current_mtime != self._last_mtime:
+                self.logger.info("Config file changed, reloading...")
+                old_config = self.to_dict()
+                self._load_config()
+                self._apply_defaults()
+                self._last_mtime = current_mtime
+                self._notify_change(old_config, self.to_dict())
+
+    def register_change_callback(self, callback: Callable) -> None:
+        """注册配置变更回调函数。"""
+        self._callbacks.append(callback)
+
+    def unregister_change_callback(self, callback: Callable) -> None:
+        """注销配置变更回调函数。"""
+        if callback in self._callbacks:
+            self._callbacks.remove(callback)
+
+    def _notify_change(self, old_config: Dict[str, Any], new_config: Dict[str, Any]) -> None:
+        for callback in self._callbacks:
+            try:
+                callback(old_config, new_config)
+            except Exception as e:
+                self.logger.error("Config change callback error: %s", e)
 
     def save(self, path: Optional[str] = None):
         """

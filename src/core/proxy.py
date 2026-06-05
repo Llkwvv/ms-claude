@@ -4,6 +4,7 @@
 
 import logging
 import time
+import uuid
 from typing import Any, Dict, Optional, Union
 from dataclasses import dataclass, field
 
@@ -55,11 +56,21 @@ class ModelProxy:
         # 当前使用的模型索引
         self._current_priority_index = 0
 
+        # 注册配置变更回调
+        if isinstance(config, Config):
+            self.config.register_change_callback(self._on_config_changed)
+
         if self.config.get("proxy.upstream_base_url", ""):
             self.logger.info("Scheduling model list refresh from configured upstream")
             self.model_manager._schedule_background_update()
 
         self.logger.info("ModelProxy initialized")
+
+    def _on_config_changed(self, old_config: Dict[str, Any], new_config: Dict[str, Any]) -> None:
+        """配置变更回调：重新加载子组件配置。"""
+        self.logger.info("Config hot-reload: updating ModelProxy settings")
+        self.model_manager.reload_config()
+        self.failure_tracker.reload_config()
 
     def get_available_model(self) -> Optional[Model]:
         """
@@ -290,7 +301,6 @@ class ModelProxy:
 
     def _generate_request_id(self) -> str:
         """生成请求ID"""
-        import uuid
         return str(uuid.uuid4())[:8]
 
     def get_status(self) -> Dict[str, Any]:

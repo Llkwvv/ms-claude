@@ -8,6 +8,7 @@ app:
   model_cache_file: "data/models_cache.json"
   failure_log_file: "logs/failures.jsonl"
   proxy_log_file: "logs/proxy.log"
+  last_success_model_file: "data/last_success_model.json"
 
 # 模型分组配置
 # 当用户通过 /model 选择某组时，代理只在该组内的模型中切换

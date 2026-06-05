@@ -22,16 +22,16 @@ install:
 	@echo "✓ Dependencies installed"
 
 test:
-	python3 test_proxy.py
+	python3 scripts/test_proxy.py
 
 run:
 	./ms-claude --serve
 
 update:
-	python3 update_models.py
+	python3 scripts/update_models.py
 
 format:
-	black src/ tests/ *.py
+	black src/ tests/ scripts/*.py
 
 lint:
 	flake8 src/ tests/ --max-line-length=100
