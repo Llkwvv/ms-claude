@@ -414,6 +414,12 @@ def _run_connect_mode(
             client_command.extend(shlex.split(client_args))
 
         client_env = os.environ.copy()
+        # 强制 UTF-8 locale，防止 Claude CLI 在非 UTF-8 环境下输出乱码
+        for key in ("LC_ALL", "LANG"):
+            val = client_env.get(key, "")
+            if "utf" not in val.lower().replace("-", "").replace("_", ""):
+                client_env[key] = "C.utf8"
+
         client_env["ANTHROPIC_BASE_URL"] = f"http://{host}:{port}"
         client_env["OPENAI_BASE_URL"] = f"http://{host}:{port}/v1"
         client_env["OPENAI_API_BASE"] = f"http://{host}:{port}/v1"

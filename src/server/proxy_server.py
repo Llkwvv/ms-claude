@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import logging.handlers
 import os
 import time
 from http import HTTPStatus
@@ -810,7 +811,6 @@ def run_proxy_server(config: Config, host: Optional[str] = None, port: Optional[
         for h in root_logger.handlers
     )
     if not has_file_handler:
-        import logging.handlers
         file_handler = logging.handlers.TimedRotatingFileHandler(
             str(log_file), when='midnight', interval=1, backupCount=7, encoding='utf-8'
         )
