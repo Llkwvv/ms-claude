@@ -281,63 +281,15 @@ class ModelManager:
             self._schedule_background_update()
 
     def _load_from_config(self):
-        """从配置文件加载模型列表"""
-        # 使用用户提供的 ModelScope 实际可用模型
-        default_models = [
-            Model(name="deepseek-ai/DeepSeek-R1-0528", display_name="DeepSeek R1 0528", provider="modelscope", priority=0, capabilities=["text-generation"]),
-            Model(name="Qwen/Qwen3-235B-A22B-Instruct-2507", display_name="Qwen3 235B", provider="modelscope", priority=1, capabilities=["text-generation"]),
-            Model(name="deepseek-ai/DeepSeek-V4-Pro", display_name="DeepSeek V4 Pro", provider="modelscope", priority=2, capabilities=["text-generation"]),
-            Model(name="deepseek-ai/DeepSeek-V4-Flash", display_name="DeepSeek V4 Flash", provider="modelscope", priority=3, capabilities=["text-generation"]),
-            Model(name="ZhipuAI/GLM-5", display_name="GLM 5", provider="modelscope", priority=4, capabilities=["text-generation"]),
-            Model(name="ZhipuAI/GLM-5.1", display_name="GLM 5.1", provider="modelscope", priority=5, capabilities=["text-generation"]),
-            Model(name="Qwen/Qwen3-Next-80B-A3B-Instruct", display_name="Qwen3 Next 80B", provider="modelscope", priority=6, capabilities=["text-generation"]),
-            Model(name="Qwen/Qwen3-32B", display_name="Qwen3 32B", provider="modelscope", priority=7, capabilities=["text-generation"]),
-            Model(name="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B", display_name="DeepSeek R1 Distill Qwen 32B", provider="modelscope", priority=8, capabilities=["text-generation"]),
-            Model(name="Qwen/Qwen3-30B-A3B-Instruct-2507", display_name="Qwen3 30B", provider="modelscope", priority=9, capabilities=["text-generation", "code-generation"]),
-            Model(name="deepseek-ai/DeepSeek-V3.2", display_name="DeepSeek V3.2", provider="modelscope", priority=10, capabilities=["text-generation"]),
-            Model(name="inclusionAI/Ling-2.6-1T", display_name="Ling 2.6 1T", provider="modelscope", priority=11, capabilities=["text-generation"]),
-            Model(name="inclusionAI/Ring-2.6-1T", display_name="Ring 2.6 1T", provider="modelscope", priority=12, capabilities=["text-generation"]),
-            Model(name="MiniMax/MiniMax-M2.7", display_name="MiniMax M2.7", provider="modelscope", priority=13, capabilities=["text-generation"]),
-            Model(name="MiniMax/MiniMax-M2.5", display_name="MiniMax M2.5", provider="modelscope", priority=14, capabilities=["text-generation"]),
-            Model(name="MiniMax/MiniMax-M1-80k", display_name="MiniMax M1 80k", provider="modelscope", priority=15, capabilities=["text-generation"]),
-            Model(name="inclusionAI/Ling-2.6-flash", display_name="Ling 2.6 Flash", provider="modelscope", priority=16, capabilities=["text-generation"]),
-            Model(name="ZhipuAI/GLM-4.7", display_name="GLM 4.7", provider="modelscope", priority=17, capabilities=["text-generation"]),
-            Model(name="ZhipuAI/GLM-4.7-Flash", display_name="GLM 4.7 Flash", provider="modelscope", priority=18, capabilities=["text-generation"]),
-            Model(name="Qwen/Qwen3-Coder-30B-A3B-Instruct", display_name="Qwen3 Coder 30B", provider="modelscope", priority=19, capabilities=["text-generation", "code-generation"]),
-            Model(name="deepseek-ai/DeepSeek-R1-Distill-Llama-70B", display_name="DeepSeek R1 Llama 70B", provider="modelscope", priority=20, capabilities=["text-generation"]),
-            Model(name="Qwen/Qwen3-14B", display_name="Qwen3 14B", provider="modelscope", priority=21, capabilities=["text-generation"]),
-            Model(name="deepseek-ai/DeepSeek-R1-Distill-Qwen-14B", display_name="DeepSeek R1 Qwen 14B", provider="modelscope", priority=22, capabilities=["text-generation"]),
-            Model(name="Qwen/Qwen3-8B", display_name="Qwen3 8B", provider="modelscope", priority=23, capabilities=["text-generation"]),
-            Model(name="XiaomiMiMo/MiMo-V2-Flash", display_name="MiMo V2 Flash", provider="modelscope", priority=24, capabilities=["text-generation"]),
-            Model(name="Qwen/Qwen3-4B", display_name="Qwen3 4B", provider="modelscope", priority=25, capabilities=["text-generation"]),
-            Model(name="deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", display_name="DeepSeek R1 Qwen 7B", provider="modelscope", priority=26, capabilities=["text-generation"]),
-            Model(name="deepseek-ai/DeepSeek-R1-Distill-Llama-8B", display_name="DeepSeek R1 Llama 8B", provider="modelscope", priority=27, capabilities=["text-generation"]),
-            Model(name="deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B", display_name="DeepSeek R1 Qwen 1.5B", provider="modelscope", priority=28, capabilities=["text-generation"]),
-            Model(name="Qwen/Qwen3-1.7B", display_name="Qwen3 1.7B", provider="modelscope", priority=29, capabilities=["text-generation"]),
-            Model(name="Qwen/Qwen3-0.6B", display_name="Qwen3 0.6B", provider="modelscope", priority=30, capabilities=["text-generation"]),
-            Model(name="ZhipuAI/GLM-4.6", display_name="GLM 4.6", provider="modelscope", priority=31, capabilities=["text-generation"]),
-            Model(name="ZhipuAI/GLM-4.5", display_name="GLM 4.5", provider="modelscope", priority=32, capabilities=["text-generation"]),
-            Model(name="MedAIBase/AntAngelMed", display_name="AntAngelMed", provider="modelscope", priority=33, capabilities=["text-generation"]),
-            Model(name="LLM-Research/Llama-4-Maverick-17B-128E-Instruct", display_name="Llama 4 Maverick", provider="modelscope", priority=34, capabilities=["text-generation"]),
-            Model(name="mistralai/Mistral-Large-Instruct-2407", display_name="Mistral Large", provider="modelscope", priority=35, capabilities=["text-generation"]),
-            Model(name="mistralai/Ministral-8B-Instruct-2410", display_name="Ministral 8B", provider="modelscope", priority=36, capabilities=["text-generation"]),
-            Model(name="meituan-longcat/LongCat-Flash-Lite", display_name="LongCat Flash Lite", provider="modelscope", priority=37, capabilities=["text-generation"]),
-            Model(name="XGenerationLab/XiYanSQL-QwenCoder-32B-2504", display_name="XiYanSQL 32B", provider="modelscope", priority=38, capabilities=["text-generation"]),
-            Model(name="XGenerationLab/XiYanSQL-QwenCoder-32B-2412", display_name="XiYanSQL 32B 2412", provider="modelscope", priority=39, capabilities=["text-generation"]),
-            Model(name="PaddlePaddle/ERNIE-4.5-21B-A3B-PT", display_name="ERNIE 4.5 21B", provider="modelscope", priority=40, capabilities=["text-generation"]),
-            Model(name="PaddlePaddle/ERNIE-4.5-300B-A47B-PT", display_name="ERNIE 4.5 300B", provider="modelscope", priority=41, capabilities=["text-generation"]),
-            Model(name="PaddlePaddle/ERNIE-4.5-0.3B-PT", display_name="ERNIE 4.5 0.3B", provider="modelscope", priority=42, capabilities=["text-generation"]),
-            Model(name="Qwen/Qwen3-30B-A3B-Thinking-2507", display_name="Qwen3 30B Thinking", provider="modelscope", priority=43, capabilities=["text-generation"]),
-            Model(name="Qwen/Qwen3-235B-A22B-Thinking-2507", display_name="Qwen3 235B Thinking", provider="modelscope", priority=44, capabilities=["text-generation"]),
-            Model(name="Qwen/Qwen3-Next-80B-A3B-Thinking", display_name="Qwen3 Next 80B Thinking", provider="modelscope", priority=45, capabilities=["text-generation"]),
-            Model(name="LLM-Research/c4ai-command-r-plus-08-2024", display_name="Command R+", provider="modelscope", priority=46, capabilities=["text-generation"]),
-            Model(name="Qwen/Qwen3-235B-A22B", display_name="Qwen3 235B", provider="modelscope", priority=47, capabilities=["text-generation"]),
-            Model(name="Qwen/Qwen3-30B-A3B", display_name="Qwen3 30B Base", provider="modelscope", priority=48, capabilities=["text-generation"]),
-        ]
+        """从配置文件 model_priority 加载模型列表"""
+        priority_names = list(self._priority_config or [])
+        models = []
+        for index, name in enumerate(priority_names):
+            models.append(self._build_model_from_name(name, index))
 
-        self._models = default_models
+        self._models = models
         self._build_name_index()
-        self.logger.info(f"Loaded {len(self._models)} default models")
+        self.logger.info("Loaded %d models from config model_priority", len(self._models))
 
     def _build_name_index(self):
         """构建名称索引"""

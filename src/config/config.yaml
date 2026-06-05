@@ -16,7 +16,6 @@ model_groups:
   opus:
     models:
       - Qwen/Qwen3-235B-A22B-Instruct-2507
-      - Qwen/Qwen3-Coder-480B-A35B-Instruct
       - deepseek-ai/DeepSeek-V4-Pro
       - ZhipuAI/GLM-5
       - ZhipuAI/GLM-5.1
@@ -35,10 +34,8 @@ model_groups:
       - Qwen/Qwen3-30B-A3B-Instruct-2507
       - deepseek-ai/DeepSeek-R1-Distill-Qwen-32B
       - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
-      - MiniMax/MiniMax-M2.7
       - MiniMax/MiniMax-M2.5
       - MiniMax/MiniMax-M1-80k
-      - ZhipuAI/GLM-4.7
       - Qwen/Qwen3-Coder-30B-A3B-Instruct
       - LLM-Research/Llama-4-Maverick-17B-128E-Instruct
       - mistralai/Mistral-Large-Instruct-2407
@@ -54,17 +51,12 @@ model_groups:
       - deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
       - Qwen/Qwen3-14B
       - Qwen/Qwen3-8B
-      - Qwen/QwQ-32B
-      - Qwen/QwQ-32B-Preview
-      - XiaomiMiMo/MiMo-V2-Flash
       - Qwen/Qwen3-4B
       - deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
       - deepseek-ai/DeepSeek-R1-Distill-Llama-8B
       - deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
       - Qwen/Qwen3-1.7B
       - Qwen/Qwen3-0.6B
-      - ZhipuAI/GLM-4.6
-      - ZhipuAI/GLM-4.5
       - MedAIBase/AntAngelMed
       - mistralai/Ministral-8B-Instruct-2410
       - meituan-longcat/LongCat-Flash-Lite
@@ -94,7 +86,6 @@ model_group_aliases:
 model_priority:
   - deepseek-ai/DeepSeek-R1-0528
   - Qwen/Qwen3-235B-A22B-Instruct-2507
-  - Qwen/Qwen3-Coder-480B-A35B-Instruct
   - deepseek-ai/DeepSeek-V4-Pro
   - deepseek-ai/DeepSeek-V4-Flash
   - ZhipuAI/GLM-5
@@ -106,28 +97,21 @@ model_priority:
   - deepseek-ai/DeepSeek-V3.2
   - inclusionAI/Ling-2.6-1T
   - inclusionAI/Ring-2.6-1T
-  - MiniMax/MiniMax-M2.7
   - MiniMax/MiniMax-M2.5
   - MiniMax/MiniMax-M1-80k
   - inclusionAI/Ling-2.6-flash
-  - ZhipuAI/GLM-4.7
   - ZhipuAI/GLM-4.7-Flash
   - Qwen/Qwen3-Coder-30B-A3B-Instruct
   - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
   - Qwen/Qwen3-14B
   - deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
   - Qwen/Qwen3-8B
-  - Qwen/QwQ-32B
-  - Qwen/QwQ-32B-Preview
-  - XiaomiMiMo/MiMo-V2-Flash
   - Qwen/Qwen3-4B
   - deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
   - deepseek-ai/DeepSeek-R1-Distill-Llama-8B
   - deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
   - Qwen/Qwen3-1.7B
   - Qwen/Qwen3-0.6B
-  - ZhipuAI/GLM-4.6
-  - ZhipuAI/GLM-4.5
   - MedAIBase/AntAngelMed
   - LLM-Research/Llama-4-Maverick-17B-128E-Instruct
   - mistralai/Mistral-Large-Instruct-2407
@@ -144,6 +128,25 @@ model_priority:
   - LLM-Research/c4ai-command-r-plus-08-2024
   - Qwen/Qwen3-235B-A22B
   - Qwen/Qwen3-30B-A3B
+
+# 模型黑名单（已知不可用，代理调度时直接跳过）
+blacklist:
+  - model: "Qwen/Qwen3-Coder-480B-A35B-Instruct"
+    reason: "has no provider supported"
+  - model: "MiniMax/MiniMax-M2.7"
+    reason: "has no provider supported"
+  - model: "ZhipuAI/GLM-4.7"
+    reason: "has no provider supported"
+  - model: "Qwen/QwQ-32B"
+    reason: "has no provider supported"
+  - model: "Qwen/QwQ-32B-Preview"
+    reason: "has no provider supported"
+  - model: "XiaomiMiMo/MiMo-V2-Flash"
+    reason: "has no provider supported"
+  - model: "ZhipuAI/GLM-4.6"
+    reason: "has no provider supported"
+  - model: "ZhipuAI/GLM-4.5"
+    reason: "has no provider supported"
 
 # ModelScope API 配置
 modelscope:

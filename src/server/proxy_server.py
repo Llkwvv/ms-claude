@@ -51,6 +51,11 @@ class ProxyService:
         self._model_group_aliases: Dict[str, str] = {}
         self._load_model_groups()
 
+        # 加载黑名单（配置中的模型调度时直接跳过）
+        self._blacklist: set[str] = set()
+        self._blacklist_reasons: Dict[str, str] = {}
+        self._load_blacklist()
+
         self.upstream_base_url = (
             self.config.get("proxy.upstream_base_url", "") or ""
         ).rstrip("/")
@@ -74,6 +79,31 @@ class ProxyService:
             return fallback_key
 
         return ""
+
+    def _load_blacklist(self) -> None:
+        """加载黑名单配置。"""
+        blacklist_config = self.config.get("blacklist", [])
+        if not blacklist_config:
+            return
+        for entry in blacklist_config:
+            if isinstance(entry, dict):
+                model_name = entry.get("model", "")
+                reason = entry.get("reason", "")
+            elif isinstance(entry, str):
+                model_name = entry
+                reason = ""
+            else:
+                continue
+            if model_name:
+                self._blacklist.add(model_name)
+                if reason:
+                    self._blacklist_reasons[model_name] = reason
+        if self._blacklist:
+            self.logger.info(
+                "Loaded %d blacklisted models: %s",
+                len(self._blacklist),
+                sorted(self._blacklist),
+            )
 
     def _load_model_groups(self) -> None:
         """加载模型分组配置。"""
@@ -134,6 +164,9 @@ class ProxyService:
         self.timeout = self.config.get("proxy.timeout", 60)
         self.api_key = self._resolve_api_key()
         self._load_model_groups()
+        self._blacklist.clear()
+        self._blacklist_reasons.clear()
+        self._load_blacklist()
         self.model_proxy.config = self.config
         self.model_proxy._on_config_changed(old_config, new_config)
 
@@ -148,7 +181,14 @@ class ProxyService:
         return None
 
     def _is_model_usable(self, model: Model, excluded: set[str]) -> bool:
-        """检查模型是否可用（状态正常、未排除、未超阈值）。"""
+        """检查模型是否可用（未黑名单、未排除、状态正常、未超阈值）。"""
+        if model.name in self._blacklist:
+            self.logger.debug(
+                "Model %s is blacklisted (%s), skipping",
+                model.name,
+                self._blacklist_reasons.get(model.name, "no reason"),
+            )
+            return False
         if model.name in excluded:
             return False
         if model.status != ModelStatus.AVAILABLE:
@@ -181,6 +221,7 @@ class ProxyService:
                     "owned_by": model.provider,
                 }
                 for model in models
+                if model.name not in self._blacklist
             ],
         }
 
