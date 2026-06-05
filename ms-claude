@@ -125,7 +125,11 @@ else
 {
   "env": {
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:$MS_CLAUDE_PORT",
-    "ANTHROPIC_AUTH_TOKEN": "PROXY_MANAGED"
+    "ANTHROPIC_AUTH_TOKEN": "PROXY_MANAGED",
+    "ANTHROPIC_MODEL": "",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": ""
   },
   "includeCoAuthoredBy": false,
   "permissions": {

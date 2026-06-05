@@ -38,6 +38,11 @@ class ProxyService:
         self.session = requests.Session()
         self._last_successful_model: Optional[str] = None
 
+        # 加载模型分组配置
+        self._model_groups: Dict[str, set[str]] = {}
+        self._model_group_aliases: Dict[str, str] = {}
+        self._load_model_groups()
+
         self.upstream_base_url = (
             self.config.get("proxy.upstream_base_url", "") or ""
         ).rstrip("/")
@@ -61,6 +66,50 @@ class ProxyService:
             return fallback_key
 
         return ""
+
+    def _load_model_groups(self) -> None:
+        """加载模型分组配置。"""
+        groups_config = self.config.get("model_groups", {})
+        for group_name, group_data in groups_config.items():
+            if isinstance(group_data, dict):
+                models = group_data.get("models", [])
+            elif isinstance(group_data, list):
+                models = group_data
+            else:
+                models = []
+            self._model_groups[group_name] = set(models)
+            self.logger.info(
+                "Model group '%s' loaded with %d models", group_name, len(models)
+            )
+
+        aliases = self.config.get("model_group_aliases", {})
+        self._model_group_aliases = dict(aliases)
+        if aliases:
+            self.logger.info(
+                "Loaded %d model group aliases", len(aliases)
+            )
+
+    def _resolve_model_group(self, model_name: str) -> Optional[str]:
+        """解析模型名对应的分组。"""
+        # 直接是组名
+        if model_name in self._model_groups:
+            return model_name
+        # 是别名
+        if model_name in self._model_group_aliases:
+            return self._model_group_aliases[model_name]
+        return None
+
+    def _is_model_usable(self, model: Model, excluded: set[str]) -> bool:
+        """检查模型是否可用（状态正常、未排除、未超阈值）。"""
+        if model.name in excluded:
+            return False
+        if model.status != ModelStatus.AVAILABLE:
+            self.logger.debug("Model %s status: %s", model.name, model.status.value)
+            return False
+        if self.model_proxy.failure_tracker.is_over_threshold(model.name):
+            self.logger.debug("Model %s exceeded failure threshold", model.name)
+            return False
+        return True
 
     def build_headers(self) -> Dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -136,31 +185,82 @@ class ProxyService:
         payload: Dict[str, Any],
         excluded: set[str],
     ) -> Optional[Model]:
-        """选择模型，优先上次成功的，其次 payload 指定的，最后按优先级。"""
-        # 1. 优先使用上次成功的模型
+        """选择模型，支持分组内切换。
+        优先级：上次成功 > 分组内 > payload 指定 > 全局列表。"""
+        requested_model = payload.get("model")
+
+        # 1. 尝试解析分组
+        group_name = None
+        if requested_model:
+            group_name = self._resolve_model_group(requested_model)
+
+        if group_name:
+            self.logger.debug(
+                "Model '%s' resolved to group '%s'", requested_model, group_name
+            )
+            model = self._select_from_group(group_name, excluded)
+            if model:
+                return model
+            self.logger.warning(
+                "All models in group '%s' failed, falling back to global list",
+                group_name,
+            )
+
+        # 2. 无分组匹配：回退到全局逻辑
+        # 2a. 上次成功的
         if self._last_successful_model and self._last_successful_model not in excluded:
             model = self.model_proxy.model_manager.get_model(self._last_successful_model)
-            if model and model.status == ModelStatus.AVAILABLE:
-                if not self.model_proxy.failure_tracker.is_over_threshold(model.name):
-                    return model
+            if model and self._is_model_usable(model, excluded):
+                return model
 
-        # 2. 其次使用 payload 指定的模型
-        model_name = payload.get("model")
-        if model_name and model_name not in excluded:
-            model = self.model_proxy.model_manager.get_model(model_name)
-            if model and model.status == ModelStatus.AVAILABLE:
-                if not self.model_proxy.failure_tracker.is_over_threshold(model.name):
-                    return model
+        # 2b. payload 指定的具体模型
+        if requested_model and requested_model not in excluded:
+            model = self.model_proxy.model_manager.get_model(requested_model)
+            if model and self._is_model_usable(model, excluded):
+                return model
 
-        # 3. 最后按优先级列表选择
+        # 2c. 全局优先级列表
         for model in self.model_proxy.model_manager.get_models_by_priority():
-            if model.name in excluded:
+            if self._is_model_usable(model, excluded):
+                return model
+        return None
+
+    def _select_from_group(
+        self, group_name: str, excluded: set[str]
+    ) -> Optional[Model]:
+        """在指定分组内选择模型。"""
+        group_models = self._model_groups.get(group_name, set())
+        if not group_models:
+            self.logger.warning("Group '%s' is empty", group_name)
+            return None
+
+        # 1. 上次成功的在组内？
+        if (
+            self._last_successful_model
+            and self._last_successful_model not in excluded
+            and self._last_successful_model in group_models
+        ):
+            model = self.model_proxy.model_manager.get_model(
+                self._last_successful_model
+            )
+            if model and self._is_model_usable(model, excluded):
+                self.logger.debug(
+                    "Using last successful model in group '%s': %s",
+                    group_name,
+                    model.name,
+                )
+                return model
+
+        # 2. 按全局优先级在组内选
+        for model in self.model_proxy.model_manager.get_models_by_priority():
+            if model.name not in group_models:
                 continue
-            if model.status != ModelStatus.AVAILABLE:
-                continue
-            if self.model_proxy.failure_tracker.is_over_threshold(model.name):
-                continue
-            return model
+            if self._is_model_usable(model, excluded):
+                self.logger.debug(
+                    "Selected model from group '%s': %s", group_name, model.name
+                )
+                return model
+
         return None
 
     def _record_model_failure(self, model: Model, error_msg: str) -> None:
