@@ -418,7 +418,7 @@ def _run_connect_mode(
         for key in ("LC_ALL", "LANG"):
             val = client_env.get(key, "")
             if "utf" not in val.lower().replace("-", "").replace("_", ""):
-                client_env[key] = "C.utf8"
+                client_env[key] = "C.UTF-8"
 
         client_env["ANTHROPIC_BASE_URL"] = f"http://{host}:{port}"
         client_env["OPENAI_BASE_URL"] = f"http://{host}:{port}/v1"

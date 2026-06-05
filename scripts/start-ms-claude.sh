@@ -5,8 +5,8 @@
 set -e
 
 # 编码保障：避免中文输出乱码
-export LC_ALL="${LC_ALL:-C.utf8}"
-export LANG="${LANG:-C.utf8}"
+export LC_ALL="${LC_ALL:-C.UTF-8}"
+export LANG="${LANG:-C.UTF-8}"
 
 # 配置
 MS_CLAUDE_HOME="${MS_CLAUDE_HOME:-$HOME/.config/ms-claude}"

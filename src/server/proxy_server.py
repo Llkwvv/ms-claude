@@ -594,6 +594,9 @@ class ProxyService:
         if not response.ok:
             return self._forward_json(response, anthropic=False)
 
+        # 强制 UTF-8 解码，防止上游 SSE 缺少 charset 时 requests 回退到 ISO-8859-1
+        response.encoding = "utf-8"
+
         def generator() -> Iterable[bytes]:
             message_id = f"msg_{int(time.time())}"
             yield self._sse("message_start", {

@@ -8,8 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROXY_DIR="$SCRIPT_DIR"
 
 # 编码保障：确保 Claude CLI 以 UTF-8 运行，避免中文乱码
-export LC_ALL="${LC_ALL:-C.utf8}"
-export LANG="${LANG:-C.utf8}"
+export LC_ALL="${LC_ALL:-C.UTF-8}"
+export LANG="${LANG:-C.UTF-8}"
 
 # WSL 下还需要设置 Windows Console 代码页为 UTF-8，否则 Node.js 应用（如 Claude CLI）
 # 会读取 Windows 的默认代码页（如 GBK/936）而非 WSL locale，导致中文乱码。
