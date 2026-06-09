@@ -210,6 +210,6 @@ proxy:
   port: 8080
   # 上游模型服务（OpenAI 或 Anthropic 兼容）
   upstream_base_url: "https://api-inference.modelscope.cn"
-  upstream_api_key: "ms-043daf20-531c-4180-a99d-5852a7fafc46"
+  upstream_api_key: ""
   upstream_api_key_env: "MS_CLAUDE_UPSTREAM_API_KEY"
   upstream_type: "openai"

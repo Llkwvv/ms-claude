@@ -1,0 +1,24 @@
+version: "3.9"
+
+services:
+  ms-claude:
+    build: .
+    container_name: ms-claude-proxy
+    ports:
+      - "8080:8080"
+    environment:
+      # 必填：你的上游 API Key
+      - MS_CLAUDE_UPSTREAM_API_KEY=${MS_CLAUDE_UPSTREAM_API_KEY:?请在 .env 中设置 MS_CLAUDE_UPSTREAM_API_KEY}
+      # 可选：自定义上游地址（默认 ModelScope）
+      # - MS_CLAUDE_UPSTREAM_BASE_URL=https://api-inference.modelscope.cn
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./src/config:/app/src/config:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

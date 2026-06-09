@@ -1,8 +1,10 @@
-# 核心依赖
+# 核心依赖（部署必需）
 requests>=2.31.0
 PyYAML>=6.0
 python-dotenv>=1.0.0
-playwright>=1.42.0
 
-# 可选依赖（流式支持）
-aiohttp>=3.9.0
+# 可选：异步流式支持（非必需）
+# aiohttp>=3.9.0
+
+# 可选：模型列表抓取需要 playwright
+# playwright>=1.42.0
