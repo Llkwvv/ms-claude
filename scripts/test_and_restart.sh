@@ -3,6 +3,9 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 echo "=========================================="
 echo "  Restart proxy + test @model command"
 echo "=========================================="
@@ -14,7 +17,7 @@ sleep 2
 
 # 2. Start proxy in background
 echo "[2/4] Starting proxy with new code..."
-cd /home/lkw/usr_local_project/ms-claude
+cd "$REPO_ROOT"
 python3 -m src.main --serve \
     --config ~/.config/ms-claude/config.yaml \
     --host 127.0.0.1 --port 8081 \
@@ -40,7 +43,7 @@ done
 
 # 4. Run tests
 echo "[4/4] Running tests..."
-python3 test_model_switch.py
+python3 "$REPO_ROOT/scripts/test_model_switch.py"
 
 TEST_EXIT=$?
 
