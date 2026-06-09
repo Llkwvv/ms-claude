@@ -53,9 +53,6 @@ class ModelProxy:
         self.model_manager = ModelManager(self.config)
         self.failure_tracker = FailureTracker(self.config)
 
-        # 当前使用的模型索引
-        self._current_priority_index = 0
-
         # 注册配置变更回调
         if isinstance(config, Config):
             self.config.register_change_callback(self._on_config_changed)

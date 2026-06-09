@@ -403,8 +403,18 @@ def _run_connect_mode(
     proxy_env["MS_CLAUDE_PORT"] = str(port)
     proxy_env["MS_CLAUDE_SETTINGS"] = claude_settings_path
 
+    # 代理子进程日志写入文件，避免与 Claude CLI 输出混在一起
+    proxy_log_path = Path(log_dir or config.home_path / "logs") / "proxy_console.log"
+    proxy_log_path.parent.mkdir(parents=True, exist_ok=True)
+    proxy_log_fp = open(proxy_log_path, "a", encoding="utf-8")
+
     logger.info("Launching proxy process: %s", " ".join(proxy_args))
-    proxy_process = subprocess.Popen(proxy_args, env=proxy_env)
+    proxy_process = subprocess.Popen(
+        proxy_args,
+        env=proxy_env,
+        stdout=proxy_log_fp,
+        stderr=subprocess.STDOUT,
+    )
     try:
         if not _wait_for_port(host, port):
             raise RuntimeError(f"Proxy did not become ready on {host}:{port}")
@@ -445,6 +455,7 @@ def _run_connect_mode(
         except subprocess.TimeoutExpired:
             proxy_process.kill()
             proxy_process.wait(timeout=5)
+        proxy_log_fp.close()
 
 
 def _prepare_claude_settings(

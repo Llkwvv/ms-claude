@@ -58,7 +58,7 @@ def test_update_from_modelscope_uses_fetch_script_and_respects_priority(
 
     captured_env = {}
 
-    def fake_run(cmd, check, capture_output, text, env):
+    def fake_run(cmd, check, capture_output, text, env, **kwargs):
         captured_env.update(env)
         assert cmd[0] == sys.executable
         assert cmd[1] == str(script_path)

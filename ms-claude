@@ -37,19 +37,23 @@ ms-claude - 启动独立的 Claude 实例（使用 ModelScope 代理）
   --port PORT       指定代理端口（默认: 8081）
   --home PATH       指定配置目录（默认: ~/.config/ms-claude）
   --client-cmd CMD  指定 Claude 客户端命令（默认: claude）
+  --model MODEL     强制使用指定模型（默认按优先级自动切换）
   --verbose, -v     显示详细日志
   --help, -h        显示此帮助信息
 
 环境变量:
   MS_CLAUDE_HOME    配置目录
   MS_CLAUDE_PORT    代理端口
+  MS_CLAUDE_MODEL   强制使用的模型名称
   CLIENT_CMD        Claude 客户端命令
 
 示例:
-  ms-claude                    # 一键启动代理和 Claude
-  ms-claude --serve            # 仅启动代理服务
-  ms-claude --port 8082        # 使用 8082 端口
-  MS_CLAUDE_PORT=9090 ms-claude  # 通过环境变量指定端口
+  ms-claude                              # 一键启动代理和 Claude
+  ms-claude --serve                      # 仅启动代理服务
+  ms-claude --port 8082                  # 使用 8082 端口
+  ms-claude --model Qwen/Qwen3-32B       # 强制使用指定模型
+  MS_CLAUDE_PORT=9090 ms-claude          # 通过环境变量指定端口
+  MS_CLAUDE_MODEL=deepseek-ai/DeepSeek-R1-0528 ms-claude  # 环境变量指定模型
 
 注意:
   原版 Claude 使用 ~/.claude/settings.json
@@ -78,6 +82,10 @@ while [[ $# -gt 0 ]]; do
             CLIENT_CMD="$2"
             shift 2
             ;;
+        --model)
+            export MS_CLAUDE_MODEL="$2"
+            shift 2
+            ;;
         --serve|--status|--update|--test|--verbose|-v)
             EXTRA_ARGS+=("$1")
             shift
@@ -93,14 +101,53 @@ if [[ " ${EXTRA_ARGS[*]} " =~ " --serve " ]] || [[ " ${EXTRA_ARGS[*]} " =~ " --s
     # 非 connect 模式，直接调用 Python 模块
     cd "$PROXY_DIR"
     python3 -m src.main "${EXTRA_ARGS[@]}"
-else
-    # 默认 connect 模式：启动代理 + Claude 客户端
+    exit $?
+fi
+
+# 默认 connect 模式：启动代理 + Claude 客户端
+    # 读取默认模型（从 config.yaml 的 model_priority）
+    DEFAULT_MODEL=""
+    MODEL_COUNT="0"
+    CONFIG_FILE="$MS_CLAUDE_HOME/config.yaml"
+    if [[ -f "$CONFIG_FILE" ]]; then
+        DEFAULT_MODEL=$(python3 -c "
+import yaml, sys
+try:
+    with open('$CONFIG_FILE') as f:
+        cfg = yaml.safe_load(f)
+    priority = cfg.get('model_priority', [])
+    blacklist = {e.get('model','') for e in cfg.get('blacklist', []) if isinstance(e, dict)}
+    available = [m for m in priority if m not in blacklist]
+    print(available[0] if available else 'N/A')
+    print(len(available))
+except Exception:
+    print('N/A')
+    print('0')
+" 2>/dev/null)
+        if [[ -n "$DEFAULT_MODEL" ]]; then
+            DEFAULT_MODEL_NAME=$(echo "$DEFAULT_MODEL" | head -1)
+            MODEL_COUNT=$(echo "$DEFAULT_MODEL" | tail -1)
+            DEFAULT_MODEL="$DEFAULT_MODEL_NAME"
+        fi
+    fi
+
+    # 如果通过 --model 指定了模型，横幅显示它；否则显示默认模型
+    if [[ -n "$MS_CLAUDE_MODEL" ]]; then
+        DISPLAY_MODEL="$MS_CLAUDE_MODEL"
+    else
+        DISPLAY_MODEL="$DEFAULT_MODEL"
+    fi
+
     echo "=========================================="
     echo "  ms-claude 独立实例启动"
     echo "=========================================="
     echo "  配置目录: $MS_CLAUDE_HOME"
     echo "  代理端口: $MS_CLAUDE_PORT"
     echo "  客户端:   $CLIENT_CMD"
+    if [[ -n "$DISPLAY_MODEL" && "$DISPLAY_MODEL" != "N/A" ]]; then
+        echo "  当前模型: $DISPLAY_MODEL"
+        echo "  可用模型: $MODEL_COUNT"
+    fi
     echo "=========================================="
     echo ""
     echo "原版 Claude 配置: ~/.claude/settings.json"

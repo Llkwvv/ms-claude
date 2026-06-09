@@ -166,7 +166,7 @@ class FailureTracker:
         model_name: str,
         error_message: str,
         request_context: Dict[str, Any]
-    ) -> FailureRecord:
+    ) -> Optional[FailureRecord]:
         """
         记录失败
 

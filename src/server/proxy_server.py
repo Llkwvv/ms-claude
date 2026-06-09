@@ -20,6 +20,8 @@ from ..core.proxy import ModelProxy
 from ..models.model import Model, ModelStatus
 from ..utils.config import Config
 
+logger = logging.getLogger(__name__)
+
 
 class ThreadedProxyHTTPServer(ThreadingHTTPServer):
     """HTTP server with attached proxy service."""
@@ -64,6 +66,38 @@ class ProxyService:
         ).lower()
         self.timeout = self.config.get("proxy.timeout", 60)
         self.api_key = self._resolve_api_key()
+
+        # 用户强制指定的模型（环境变量或配置）
+        self._forced_model = os.environ.get("MS_CLAUDE_MODEL", "") or ""
+        if not self._forced_model:
+            self._forced_model = self.config.get("proxy.default_model", "") or ""
+
+        # 启动时显示当前模型配置
+        self._log_startup_models()
+
+    def _log_startup_models(self) -> None:
+        """启动时显示当前模型配置。"""
+        models = self.model_proxy.model_manager.get_models_by_priority()
+        available = [m for m in models if m.status == ModelStatus.AVAILABLE]
+        blacklisted = sorted(self._blacklist)
+
+        self.logger.info("=" * 50)
+        self.logger.info("Loaded %d models, %d available", len(models), len(available))
+        if self._forced_model:
+            self.logger.info("Forced model (override): %s", self._forced_model)
+        elif available:
+            self.logger.info("Default model: %s", available[0].name)
+            if len(available) > 1:
+                self.logger.info(
+                    "Fallback chain: %s",
+                    " -> ".join(m.name for m in available[:5])
+                    + (" ..." if len(available) > 5 else "")
+                )
+        else:
+            self.logger.warning("No available models loaded!")
+        if blacklisted:
+            self.logger.info("Blacklisted: %s", blacklisted)
+        self.logger.info("=" * 50)
 
     def _resolve_api_key(self) -> str:
         api_key = self.config.get("proxy.upstream_api_key", "") or ""
@@ -167,6 +201,10 @@ class ProxyService:
         self._blacklist.clear()
         self._blacklist_reasons.clear()
         self._load_blacklist()
+        # 重新加载用户强制指定的模型
+        self._forced_model = os.environ.get("MS_CLAUDE_MODEL", "") or ""
+        if not self._forced_model:
+            self._forced_model = self.config.get("proxy.default_model", "") or ""
         self.model_proxy.config = self.config
         self.model_proxy._on_config_changed(old_config, new_config)
 
@@ -196,6 +234,9 @@ class ProxyService:
             return False
         if self.model_proxy.failure_tracker.is_over_threshold(model.name):
             self.logger.debug("Model %s exceeded failure threshold", model.name)
+            return False
+        if self._is_in_cooldown(model):
+            self.logger.debug("Model %s is in cooldown", model.name)
             return False
         return True
 
@@ -268,6 +309,109 @@ class ProxyService:
         elif max_tokens is not None:
             payload["max_tokens"] = 8192
 
+    def _sanitize_payload(self, payload: Dict[str, Any]) -> None:
+        """清理 payload，确保数值参数类型正确（原地修改）。
+        某些后端对类型校验严格（如 Qwen3 要求 temperature 为 Float）。"""
+        # temperature: int -> float
+        temp = payload.get("temperature")
+        if isinstance(temp, int):
+            payload["temperature"] = float(temp)
+        # top_p: int -> float
+        top_p = payload.get("top_p")
+        if isinstance(top_p, int):
+            payload["top_p"] = float(top_p)
+        # presence_penalty / frequency_penalty: int -> float
+        for key in ("presence_penalty", "frequency_penalty"):
+            val = payload.get(key)
+            if isinstance(val, int):
+                payload[key] = float(val)
+
+    def _check_model_switch_command(
+        self, payload: Dict[str, Any]
+    ) -> Optional[Tuple[int, Dict[str, str], Any, bool]]:
+        """检测并处理 !model 切换命令。
+        如果用户消息以 '!model ' 开头，提取模型名并切换。"""
+        messages = payload.get("messages", [])
+        if not messages or not isinstance(messages, list):
+            return None
+
+        # 找最后一条 user 消息
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                content = msg.get("content", "")
+                content_type = type(content).__name__
+                # Claude CLI 可能发送 list 格式的 content（多模态），提取文本
+                text_content = ""
+                if isinstance(content, str):
+                    text_content = content
+                elif isinstance(content, list):
+                    for item in content:
+                        if isinstance(item, dict) and item.get("type") == "text":
+                            text_content += item.get("text", "")
+                        elif isinstance(item, str):
+                            text_content += item
+
+                self.logger.info(
+                    "Checking user message: content_type=%s text=%r starts_with_model=%s",
+                    content_type, text_content[:120], text_content.startswith("@model "),
+                )
+
+                if text_content.startswith("@model "):
+                    # 只取第一行，防止被 system-reminder 等内容污染
+                    model_name = text_content[7:].split("\n")[0].strip()
+                    if not model_name:
+                        self.logger.info("Empty model name in @model command")
+                        return None
+
+                    # 验证模型是否存在
+                    model = self.model_proxy.model_manager.get_model(model_name)
+                    payload_model = payload.get("model", "claude-sonnet-4-20250514")
+                    if not model:
+                        self.logger.info("Model not found: %s", model_name)
+                        return HTTPStatus.OK, {"Content-Type": "application/json"}, {
+                            "id": f"msg_{int(time.time())}",
+                            "type": "message",
+                            "role": "assistant",
+                            "model": payload_model,
+                            "content": [{"type": "text", "text": f"Model '{model_name}' not found."}],
+                            "stop_reason": "end_turn",
+                            "stop_sequence": None,
+                            "usage": {"input_tokens": 0, "output_tokens": 0},
+                        }, False
+
+                    # 设置强制模型
+                    self._forced_model = model_name
+                    self.logger.info("Switched to model via command: %s", model_name)
+                    return HTTPStatus.OK, {"Content-Type": "application/json"}, {
+                        "id": f"msg_{int(time.time())}",
+                        "type": "message",
+                        "role": "assistant",
+                        "model": payload_model,
+                        "content": [{"type": "text", "text": f"Switched to model: {model_name}"}],
+                        "stop_reason": "end_turn",
+                        "stop_sequence": None,
+                        "usage": {"input_tokens": 0, "output_tokens": 0},
+                    }, False
+
+                # 恢复自动切换
+                if text_content.strip() == "@model auto":
+                    self._forced_model = ""
+                    self.logger.info("Cleared forced model, back to auto-selection")
+                    payload_model = payload.get("model", "claude-sonnet-4-20250514")
+                    return HTTPStatus.OK, {"Content-Type": "application/json"}, {
+                        "id": f"msg_{int(time.time())}",
+                        "type": "message",
+                        "role": "assistant",
+                        "model": payload_model,
+                        "content": [{"type": "text", "text": "Auto model selection restored."}],
+                        "stop_reason": "end_turn",
+                        "stop_sequence": None,
+                        "usage": {"input_tokens": 0, "output_tokens": 0},
+                    }, False
+
+        self.logger.info("No @model command found in messages")
+        return None
+
     def _select_model(self, payload: Dict[str, Any]) -> Model:
         model_name = payload.get("model")
         if model_name:
@@ -287,8 +431,20 @@ class ProxyService:
         excluded: set[str],
     ) -> Optional[Model]:
         """选择模型，支持分组内切换。
-        优先级：上次成功 > 分组内 > payload 指定 > 全局列表。"""
+        优先级：强制指定 > 上次成功 > 分组内 > payload 指定 > 全局列表。"""
         requested_model = payload.get("model")
+
+        # 0. 用户通过环境变量或配置强制指定的模型（最高优先级）
+        if self._forced_model and self._forced_model not in excluded:
+            model = self.model_proxy.model_manager.get_model(self._forced_model)
+            if model and self._is_model_usable(model, excluded):
+                self.logger.info("Using forced model: %s", self._forced_model)
+                return model
+            self.logger.warning(
+                "Forced model '%s' is not available (blacklisted, disabled, or failed), "
+                "falling back to auto-selection",
+                self._forced_model,
+            )
 
         # 1. 尝试解析分组
         group_name = None
@@ -370,6 +526,8 @@ class ProxyService:
         self.model_proxy.failure_tracker.record_failure(
             model.name, error_msg, {}
         )
+        # 同步更新 Model 对象运行时统计，供冷却时间等机制使用
+        model.update_stats(success=False)
 
     @staticmethod
     def _extract_error_message(response: requests.Response) -> str:
@@ -403,6 +561,7 @@ class ProxyService:
             upstream_payload = dict(payload)
             upstream_payload["model"] = model.name
             self._clamp_max_tokens(upstream_payload)
+            self._sanitize_payload(upstream_payload)
 
             url = urljoin(self.upstream_base_url + "/", "v1/chat/completions")
             stream = bool(upstream_payload.get("stream"))
@@ -430,6 +589,8 @@ class ProxyService:
                 )
                 self._last_successful_model = model.name
                 self._save_last_successful_model()
+                self.model_proxy.failure_tracker.record_success(model.name)
+                model.update_stats(success=True)
                 return self._forward_openai_response(response, stream=stream)
 
             error_msg = self._extract_error_message(response)
@@ -454,6 +615,11 @@ class ProxyService:
         if not self.upstream_base_url:
             return self._upstream_not_configured()
 
+        # 检测对话中的 @model 切换命令
+        switch_result = self._check_model_switch_command(payload)
+        if switch_result:
+            return switch_result
+
         max_retries = self.config.get("quota.max_retries", 3)
         excluded: set[str] = set()
         last_error = "Unknown error"
@@ -472,6 +638,7 @@ class ProxyService:
                 if self.upstream_type == "anthropic":
                     upstream_payload = dict(payload)
                     upstream_payload["model"] = model.name
+                    self._sanitize_payload(upstream_payload)
                     url = urljoin(self.upstream_base_url + "/", "v1/messages")
                     response = self.session.post(
                         url,
@@ -486,12 +653,15 @@ class ProxyService:
                         )
                         self._last_successful_model = model.name
                         self._save_last_successful_model()
+                        self.model_proxy.failure_tracker.record_success(model.name)
+                        model.update_stats(success=True)
                         if stream:
                             return self._forward_raw_stream(response)
                         return self._forward_json(response, anthropic=True)
 
                 else:
                     openai_payload = self._anthropic_to_openai_payload(payload, model.name)
+                    self._sanitize_payload(openai_payload)
                     url = urljoin(self.upstream_base_url + "/", "v1/chat/completions")
                     response = self.session.post(
                         url,
@@ -506,6 +676,8 @@ class ProxyService:
                         )
                         self._last_successful_model = model.name
                         self._save_last_successful_model()
+                        self.model_proxy.failure_tracker.record_success(model.name)
+                        model.update_stats(success=True)
                         if stream:
                             return self._transform_openai_stream_to_anthropic(response)
                         return self._transform_openai_to_anthropic(response)
@@ -531,11 +703,22 @@ class ProxyService:
         return HTTPStatus.SERVICE_UNAVAILABLE, {
             "Content-Type": "application/json",
         }, {
+            "type": "error",
             "error": {
+                "type": "api_error",
                 "message": f"All models failed after {len(excluded)} attempts. Last error: {last_error}",
-                "type": "service_unavailable",
             }
         }, False
+
+    def _is_in_cooldown(self, model: Model) -> bool:
+        """检查模型是否在指数退避冷却期。"""
+        if model.last_failure_time is None:
+            return False
+        base_cooldown = 60
+        multiplier = 2 ** min(model.consecutive_failures, 5)
+        cooldown = base_cooldown * multiplier
+        elapsed = time.time() - model.last_failure_time
+        return elapsed < cooldown
 
     def _anthropic_to_openai_payload(self, payload: Dict[str, Any], model_name: str) -> Dict[str, Any]:
         messages = []
@@ -810,6 +993,63 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
         else:
             self._send_json(status, payload)
 
+    def _json_to_sse(self, payload: Dict[str, Any]) -> Iterable[bytes]:
+        """将 Anthropic 格式的 JSON 响应转换为 SSE 流格式。"""
+        msg_id = payload.get("id", f"msg_{int(time.time())}")
+        model_name = payload.get("model", "unknown")
+
+        def _sse(event: str, data: Dict[str, Any]) -> bytes:
+            return ("data: " + json.dumps(data) + "\n\n").encode()
+
+        # message_start
+        yield _sse("message_start", {
+            "type": "message_start",
+            "message": {
+                "id": msg_id,
+                "type": "message",
+                "role": "assistant",
+                "model": model_name,
+                "content": [],
+                "stop_reason": None,
+                "stop_sequence": None,
+                "usage": {"input_tokens": 0, "output_tokens": 0},
+            }
+        })
+        # content_block_start
+        yield _sse("content_block_start", {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "text", "text": ""}
+        })
+        # content_block_delta (text)
+        content = payload.get("content", [])
+        text = ""
+        if content and isinstance(content, list) and len(content) > 0:
+            first = content[0]
+            if isinstance(first, dict) and first.get("type") == "text":
+                text = first.get("text", "")
+        if text:
+            chunk_size = 100
+            for i in range(0, len(text), chunk_size):
+                chunk = text[i:i+chunk_size]
+                yield _sse("content_block_delta", {
+                    "type": "content_block_delta",
+                    "index": 0,
+                    "delta": {"type": "text_delta", "text": chunk}
+                })
+        # content_block_stop
+        yield _sse("content_block_stop", {"type": "content_block_stop", "index": 0})
+        # message_delta
+        yield _sse("message_delta", {
+            "type": "message_delta",
+            "delta": {"stop_reason": payload.get("stop_reason", "end_turn"), "stop_sequence": None},
+            "usage": {"output_tokens": 0}
+        })
+        # message_stop
+        yield _sse("message_stop", {"type": "message_stop"})
+        # 结束标记（某些客户端需要）
+        yield b"data: [DONE]\n\n"
+
     def do_POST(self) -> None:  # noqa: N802
         service: ProxyService = self.server.proxy_service
         try:
@@ -827,7 +1067,17 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
             urlparse(self.path).path,
             payload
         )
-        if is_stream:
+        # 如果原始请求要求流式，但代理返回非流式（如 @model 命令），
+        # 将 JSON 转换为 SSE 流式格式
+        if payload.get("stream") and not is_stream and isinstance(response_body, dict):
+            sse_headers = {
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            }
+            logger.info("Converting JSON to SSE stream for @model response")
+            self._send_stream(status, sse_headers, self._json_to_sse(response_body))
+        elif is_stream:
             self._send_stream(status, headers, response_body)
         else:
             self._send_json(status, response_body)
